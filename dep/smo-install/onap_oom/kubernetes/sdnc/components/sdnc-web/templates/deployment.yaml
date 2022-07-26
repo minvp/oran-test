@@ -1,0 +1,113 @@
+{{/*
+# Copyright © 2020 highstreet technologies GmbH
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#       http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+*/}}
+
+apiVersion: apps/v1
+kind: Deployment
+metadata: {{- include "common.resourceMetadata" . | nindent 2 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector: {{- include "common.selectors" . | nindent 4 }}
+  template:
+    metadata: {{- include "common.templateMetadata" . | nindent 6 }}
+    spec:
+      initContainers: {{ include "common.certInitializer.initContainer" . | indent 6 }}
+      - name: {{ include "common.name" . }}-readiness
+        image: {{ include "repositoryGenerator.image.readiness" . }}
+        imagePullPolicy: {{ .Values.global.pullPolicy | default .Values.pullPolicy }}
+        command:
+        - /app/ready.py
+        args:
+        - --container-name
+        - {{ .Values.config.sdncChartName }}
+        env:
+        - name: NAMESPACE
+          valueFrom:
+            fieldRef:
+              apiVersion: v1
+              fieldPath: metadata.namespace
+
+      containers:
+        - name: {{ include "common.name" . }}
+          image: {{ include "repositoryGenerator.repository" . }}/{{ .Values.image }}
+          imagePullPolicy: {{ .Values.global.pullPolicy | default .Values.pullPolicy }}
+          ports: {{- include "common.containerPorts" . | indent 10 }}
+          # disable liveness probe when breakpoints set in debugger
+          # so K8s doesn't restart unresponsive container
+          {{ if .Values.liveness.enabled }}
+          livenessProbe:
+            tcpSocket:
+              port: {{ (eq "true" (include "common.needTLS" .)) | ternary .Values.service.internalPort .Values.service.internalPlainPort }}
+            initialDelaySeconds: {{ .Values.liveness.initialDelaySeconds }}
+            periodSeconds: {{ .Values.liveness.periodSeconds }}
+          {{ end }}
+          readinessProbe:
+            tcpSocket:
+              port: {{ (eq "true" (include "common.needTLS" .)) | ternary .Values.service.internalPort .Values.service.internalPlainPort }}
+            initialDelaySeconds: {{ .Values.readiness.initialDelaySeconds }}
+            periodSeconds: {{ .Values.readiness.periodSeconds }}
+          env:
+          - name: WEBPROTOCOL
+            value: {{ (eq "true" (include "common.needTLS" .)) | ternary .Values.config.webProtocol .Values.config.webPlainProtocol }}
+          - name: WEBPORT
+            value : {{ (eq "true" (include "common.needTLS" .)) | ternary .Values.config.webPort .Values.config.webPlainPort | quote }}
+          - name: SDNRPROTOCOL
+            value : {{ (eq "true" (include "common.needTLS" .)) | ternary .Values.config.sdnrProtocol .Values.config.sdnrPlainProtocol }}
+          - name: SDNRHOST
+            value : {{ (eq "true" (include "common.needTLS" .)) | ternary .Values.config.sdnrHost .Values.config.sdnrPlainHost }}.{{ include "common.namespace" . }}
+          - name: SDNRPORT
+            value : {{ (eq "true" (include "common.needTLS" .)) | ternary .Values.config.sdnrPort .Values.config.sdnrPlainPort | quote }}
+          {{ if (include "common.needTLS" .) }}
+          - name: SSL_CERT_DIR
+            value: {{ .Values.config.sslCertDir }}
+          - name: SSL_CERTIFICATE
+            value: {{ .Values.config.sslCertiticate }}
+          - name: SSL_CERTIFICATE_KEY
+            value: {{ .Values.config.sslCertKey }}
+          {{ end }}
+          {{ if .Values.config.transportpce.enabled }}
+          - name: TRPCEURL
+            value: {{ .Values.config.transportpce.transportpceUrl }}
+          {{ end }}
+          {{ if .Values.config.topologyserver.enabled }}
+          - name: TOPOURL
+            value: {{ .Values.config.topologyserver.topologyserverUrl }}
+          - name: TILEURL
+            value: {{ .Values.config.topologyserver.tileserverUrl }}
+          {{ end }}
+          - name: ENABLE_OAUTH
+            value: "{{ .Values.config.oauth.enabled | default "false" }}"
+          - name: ENABLE_ODLUX_RBAC
+            value: "{{ .Values.config.oauth.odluxRbac.enabled | default "false" }}"
+          volumeMounts:  {{ include "common.certInitializer.volumeMount" . | nindent 10 }}
+          - mountPath: /etc/localtime
+            name: localtime
+            readOnly: true
+
+          resources: {{ include "common.resources" . | nindent 12 }}
+      {{- if .Values.nodeSelector }}
+      nodeSelector: {{ toYaml .Values.nodeSelector | nindent 8 }}
+      {{- end }}
+      {{- if .Values.affinity }}
+      affinity: {{ toYaml .Values.affinity | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "common.fullname" (dict "suffix" "read" "dot" . )}}
+      volumes: {{ include "common.certInitializer.volumes" . | nindent 6 }}
+      - name: localtime
+        hostPath:
+          path: /etc/localtime
+
+      imagePullSecrets:
+      - name: "{{ include "common.namespace" . }}-docker-registry-key"

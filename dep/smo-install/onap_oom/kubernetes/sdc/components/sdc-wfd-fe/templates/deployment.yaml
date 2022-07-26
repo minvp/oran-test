@@ -1,0 +1,178 @@
+{{/*
+# Copyright © 2018 Amdocs, Bell Canada
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#       http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+*/}}
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "common.fullname" . }}
+  namespace: {{ include "common.namespace" . }}
+  labels:
+    app: {{ include "common.name" . }}
+    chart: {{ .Chart.Name }}-{{ .Chart.Version | replace "+" "_" }}
+    release: {{ include "common.release" . }}
+    heritage: {{ .Release.Service }}
+spec:
+  selector:
+    matchLabels:
+      app: {{ include "common.name" . }}
+  replicas: {{ .Values.replicaCount }}
+  template:
+    metadata:
+      labels:
+        app: {{ include "common.name" . }}
+        release: {{ include "common.release" . }}
+    spec:
+      initContainers: {{ include "common.certInitializer.initContainer" . | nindent 6 }}
+      - name: {{ include "common.name" . }}-readiness
+        command:
+        - /app/ready.py
+        args:
+        - --container-name
+        - "sdc-wfd-be"
+        env:
+        - name: NAMESPACE
+          valueFrom:
+            fieldRef:
+              apiVersion: v1
+              fieldPath: metadata.namespace
+        image: {{ include "repositoryGenerator.image.readiness" . }}
+        imagePullPolicy: {{ .Values.global.pullPolicy | default .Values.pullPolicy }}
+        resources:
+          limits:
+            cpu: 100m
+            memory: 100Mi
+          requests:
+            cpu: 3m
+            memory: 20Mi
+      {{- if .Values.global.aafEnabled }}
+      - name: {{ include "common.fullname" . }}-move-cert
+        command:
+          - /bin/sh
+        args:
+          - -c
+          - |
+            cp {{ .Values.certInitializer.credsPath }}/{{ .Values.certInitializer.keystoreFile }} /sdc-certs/{{ .Values.certInitializer.keystoreFile }}
+            cp {{ .Values.certInitializer.credsPath }}/{{ .Values.certInitializer.truststoreFile }} /sdc-certs/{{ .Values.certInitializer.truststoreFile }}
+            cp {{ .Values.certInitializer.credsPath }}/mycreds.prop /sdc-certs/mycreds.prop
+        image: {{ include "repositoryGenerator.image.busybox" . }}
+        imagePullPolicy: {{ .Values.global.pullPolicy | default .Values.pullPolicy }}
+        volumeMounts: {{ include "common.certInitializer.volumeMount" . | nindent 10 }}
+          - name: sdc-certs
+            mountPath: /sdc-certs
+        resources:
+          limits:
+            cpu: 100m
+            memory: 100Mi
+          requests:
+            cpu: 3m
+            memory: 20Mi
+      {{- end }}
+      containers:
+        - name: {{ include "common.name" . }}
+          image: {{ include "repositoryGenerator.repository" . }}/{{ .Values.image }}
+          imagePullPolicy: {{ .Values.global.pullPolicy | default .Values.pullPolicy }}
+          {{- if .Values.global.aafEnabled }}
+          command:
+          - sh
+          args:
+          - "-c"
+          - |
+            export $(grep '^c' /sdc-certs/mycreds.prop | xargs -0)
+            export KEYSTORE_PASS=$cadi_keystore_password_p12
+            export TRUSTSTORE_PASS=$cadi_truststore_password
+            export KEYSTORE_PATH=/etc/{{ .Values.certInitializer.keystoreFile }}
+            export TRUSTSTORE_PATH=/etc/{{ .Values.certInitializer.truststoreFile }}
+            ./startup.sh
+          {{- end }}
+          ports:
+          - containerPort: {{ (eq "true" (include "common.needTLS" .)) | ternary .Values.service.internalPort2 .Values.service.internalPort }}
+          {{ if .Values.liveness.enabled }}
+          livenessProbe:
+            tcpSocket:
+              port: {{ (eq "true" (include "common.needTLS" .)) | ternary .Values.service.internalPort2 .Values.service.internalPort }}
+            initialDelaySeconds: {{ .Values.liveness.initialDelaySeconds }}
+            periodSeconds: {{ .Values.liveness.periodSeconds }}
+            successThreshold: {{ .Values.liveness.successThreshold }}
+            failureThreshold: {{ .Values.liveness.failureThreshold }}
+          {{ end }}
+          readinessProbe:
+            tcpSocket:
+              port: {{ (eq "true" (include "common.needTLS" .)) | ternary .Values.service.internalPort2 .Values.service.internalPort }}
+            initialDelaySeconds: {{ .Values.readiness.initialDelaySeconds }}
+            periodSeconds: {{ .Values.readiness.periodSeconds }}
+            successThreshold: {{ .Values.readiness.successThreshold }}
+            failureThreshold: {{ .Values.readiness.failureThreshold }}
+          startupProbe:
+            tcpSocket:
+              port: {{ (eq "true" (include "common.needTLS" .)) | ternary .Values.service.internalPort2 .Values.service.internalPort }}
+            initialDelaySeconds: {{ .Values.startup.initialDelaySeconds }}
+            periodSeconds: {{ .Values.startup.periodSeconds }}
+            successThreshold: {{ .Values.startup.successThreshold }}
+            failureThreshold: {{ .Values.startup.failureThreshold }}
+          env:
+          - name: ENVNAME
+            value: {{ .Values.env.name }}
+          - name: JAVA_OPTIONS
+            value: {{ .Values.config.javaOptions }}
+          - name: BACKEND
+            value: "{{ (eq "true" (include "common.needTLS" .)) | ternary .Values.config.backendServerURL.https .Values.config.backendServerURL.http }}"
+          - name: IS_HTTPS
+            value: "{{ (eq "true" (include "common.needTLS" .)) | ternary "true" "false" }}"
+            {{- if and (include "common.needTLS" .) (eq .Values.security.isDefaultStore false) }}
+          - name: TRUST_ALL
+            value: "{{ .Values.config.isTrustAll}}"
+            {{- end }}
+          volumeMounts:
+          - name: {{ include "common.fullname" . }}-localtime
+            mountPath: /etc/localtime
+            readOnly: true
+          {{- if .Values.global.aafEnabled }}
+          - name: sdc-certs
+            mountPath: /sdc-certs/mycreds.prop
+            subPath: mycreds.prop
+          - name: sdc-certs
+            mountPath: /var/lib/jetty/etc/{{ .Values.certInitializer.keystoreFile }}
+            subPath: {{ .Values.certInitializer.keystoreFile }}
+          - name: sdc-certs
+            mountPath: /var/lib/jetty/etc/{{ .Values.certInitializer.truststoreFile }}
+            subPath: {{ .Values.certInitializer.truststoreFile }}
+          {{ end }}
+          resources: {{ include "common.resources" . | nindent 12 }}
+        {{- if .Values.nodeSelector }}
+        nodeSelector:
+{{ toYaml .Values.nodeSelector | indent 10 }}
+        {{- end -}}
+        {{- if .Values.affinity }}
+        affinity:
+{{ toYaml .Values.affinity | indent 10 }}
+        {{- end }}
+        # side car containers
+        {{ include "common.log.sidecar" . | nindent 8 }}
+      serviceAccountName: {{ include "common.fullname" (dict "suffix" "read" "dot" . )}}
+      volumes: {{ include "common.certInitializer.volumes" . | nindent 8 }}
+        - name: {{ include "common.fullname" . }}-localtime
+          hostPath:
+            path: /etc/localtime
+        {{- if .Values.global.aafEnabled }}
+        - name: sdc-certs
+          emptyDir:
+            medium: "Memory"
+        {{- end }}
+        {{ include "common.log.volumes" (dict "dot" . "configMapNamePrefix" (tpl .Values.logConfigMapNamePrefix . )) | nindent 8 }}
+        - name: logs
+          emptyDir: {}
+      imagePullSecrets:
+      - name: "{{ include "common.namespace" . }}-docker-registry-key"

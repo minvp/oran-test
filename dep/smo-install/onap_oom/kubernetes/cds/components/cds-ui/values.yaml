@@ -1,0 +1,135 @@
+# Copyright © 2018 Orange
+# Modifications Copyright © 2018  Amdocs, Bell Canada
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#       http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+#################################################################
+# Global configuration defaults.
+#################################################################
+global:
+  nodePortPrefixExt: 304
+
+subChartsOnly:
+  enabled: true
+
+#################################################################
+# AAF part
+#################################################################
+certInitializer:
+  nameOverride: cds-cert-initializer
+  aafDeployFqi: deployer@people.osaaf.org
+  aafDeployPass: demo123456!
+  # aafDeployCredsExternalSecret: some secret
+  fqdn: sdnc-cds
+  fqi: sdnc-cds@sdnc-cds.onap.org
+  public_fqdn: sdnc-cds.onap.org
+  cadi_longitude: "0.0"
+  cadi_latitude: "0.0"
+  app_ns: org.osaaf.aaf
+  credsPath: /opt/app/osaaf/local
+  fqi_namespace: org.onap.sdnc-cds
+  aaf_add_config: >
+    /opt/app/aaf_config/bin/agent.sh;
+    /opt/app/aaf_config/bin/agent.sh local showpass
+    {{.Values.fqi}} {{ .Values.fqdn }} > {{ .Values.credsPath }}/mycreds.prop
+
+# application image
+image: onap/ccsdk-cds-ui-server:1.3.0
+pullPolicy: Always
+
+# application configuration
+config:
+  app:
+    action:
+      deployBlueprint:
+        grpcEnabled: true
+  api:
+    controller:
+      http:
+       baseUrl: http://cds-blueprints-processor-http:8081/api/v1
+       authToken: Basic Y2NzZGthcHBzOmNjc2RrYXBwcw==
+    processor:
+      http:
+       baseUrl: http://cds-blueprints-processor-http:8080/api/v1
+       authToken: Basic Y2NzZGthcHBzOmNjc2RrYXBwcw==
+      grpc:
+        host: cds-blueprints-processor-grpc
+        port: 9111
+        authToken: Basic Y2NzZGthcHBzOmNjc2RrYXBwcw==
+
+# default number of instances
+replicaCount: 1
+
+nodeSelector: {}
+
+affinity: {}
+
+# probe configuration parameters
+liveness:
+  httpGet:
+    path: /
+    port: 3000
+  initialDelaySeconds: 30
+  periodSeconds: 10
+  # necessary to disable liveness probe when setting breakpoints
+  # in debugger so K8s doesn't restart unresponsive container
+  enabled: true
+
+readiness:
+  httpGet:
+    path: /ping
+    port: 3000
+  initialDelaySeconds: 30
+  periodSeconds: 10
+
+service:
+  type: NodePort
+  portName: cds-ui
+  name: cds-ui
+  nodePort: 97
+  internalPort: 3000
+
+ingress:
+  enabled: false
+  service:
+    - baseaddr: "cdsui"
+      name: "cds-ui"
+      port: 3000
+      config:
+        ssl: "redirect"
+
+# Resource Limit flavor -By Default using small
+flavor: small
+# Segregation for Different environment (Small and Large)
+resources:
+  small:
+    limits:
+      cpu: 1
+      memory: 1Gi
+    requests:
+      cpu: 10m
+      memory: 100Mi
+  large:
+    limits:
+      cpu: 2
+      memory: 2Gi
+    requests:
+      cpu: 200m
+      memory: 200Mi
+  unlimited: {}
+
+#Pods Service Account
+serviceAccount:
+  nameOverride: cds-ui
+  roles:
+    - read

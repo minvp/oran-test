@@ -1,0 +1,77 @@
+# Copyright © 2017 Amdocs, Bell Canada
+# Modifications Copyright © 2021 Orange
+# Modifications Copyright © 2021 Nordix Foundation
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#       http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+apiVersion: v2
+description: SDN Controller
+name: sdnc
+version: 11.0.0
+
+dependencies:
+  - name: common
+    version: ~11.x-0
+    repository: '@local'
+  - name: certInitializer
+    version: ~11.x-0
+    repository: '@local'
+  - name: certManagerCertificate
+    version: ~11.x-0
+    repository: '@local'
+  - name: logConfiguration
+    version: ~11.x-0
+    repository: '@local'
+  - name: network-name-gen
+    version: ~11.x-0
+    repository: '@local'
+    condition: network-name-gen.enabled
+  - name: dgbuilder
+    version: ~11.x-0
+    repository: '@local'
+    condition: dgbuilder.enabled
+  - name: sdnc-prom
+    version: ~11.x-0
+    repository: '@local'
+    condition: config.geoEnabled
+  - name: mariadb-galera
+    version: ~11.x-0
+    repository: '@local'
+    condition: global.mariadbGalera.localCluster
+  - name: elasticsearch
+    version: ~11.x-0
+    repository: '@local'
+    condition: config.sdnr.enabled
+  # conditions for sdnc-subcharts
+  - name: dmaap-listener
+    version: ~11.x-0
+    repository: 'file://components/dmaap-listener/'
+    condition: sdnc.dmaap-listener.enabled,dmaap-listener.enabled
+  - name: ueb-listener
+    version: ~11.x-0
+    repository: 'file://components/ueb-listener/'
+    condition: sdnc.ueb-listener.enabled,ueb-listener.enabled
+  - name: sdnc-ansible-server
+    version: ~11.x-0
+    repository: 'file://components/sdnc-ansible-server/'
+    condition: sdnc.sdnc-ansible-server.enabled,sdnc-ansible-server.enabled
+  - name: sdnc-web
+    version: ~11.x-0
+    repository: 'file://components/sdnc-web/'
+    condition: sdnc.sdnc-web.enabled,sdnc-web.enabled
+  - name: repositoryGenerator
+    version: ~11.x-0
+    repository: '@local'
+  - name: serviceAccount
+    version: ~11.x-0
+    repository: '@local'

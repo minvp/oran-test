@@ -1,0 +1,282 @@
+# Copyright (c) 2019 IBM, Bell Canada
+# Copyright (c) 2020 Samsung Electronics
+# Modification Copyright © 2022 Nordix Foundation
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#       http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+#################################################################
+# Global configuration defaults.
+#################################################################
+global:
+  # Change to an unused port prefix range to prevent port conflicts
+  # with other instances running within the same k8s cluster
+  nodePortPrefixExt: 304
+
+  # image pull policy
+  pullPolicy: Always
+
+  persistence:
+    mountPath: /dockerdata-nfs
+
+  # This configuration specifies Service and port for SDNC OAM interface
+  sdncOamService: sdnc-oam
+  sdncOamPort: 8282
+
+  # This concerns CDS/AAI communication through HTTP when TLS is not being needed
+  # Port value should match the one in aai/values.yml : service.externalPlainPort
+  aaiData:
+    ExternalPlainPort: 80 # when TLS is not needed
+    ServiceName: aai  # domain
+    # http://aai:80 or https://aai:443
+
+  #AAF is enabled by default
+  #aafEnabled: true
+
+  #enable importCustomCerts to add custom CA to blueprint processor pod
+  #importCustomCertsEnabled: true
+
+  #use below configmap to add custom CA certificates
+  #certificates with *.pem will be added to JAVA truststore $JAVA_HOME/lib/security/cacerts in the pod
+  #certificates with *.crt will be added to /etc/ssl/certs/ca-certificates.crt in the pod
+  #customCertsConfigMap: onap-cds-blueprints-processor-configmap
+
+#################################################################
+# Secrets metaconfig
+#################################################################
+secrets:
+  - uid: 'cds-db-user-creds'
+    type: basicAuth
+    externalSecret: '{{ tpl (default "" .Values.config.cdsDB.dbCredsExternalSecret) . }}'
+    login: '{{ .Values.config.cdsDB.dbUser }}'
+    password: '{{ .Values.config.cdsDB.dbPassword }}'
+    passwordPolicy: required
+  - uid: 'sdnc-db-root-pass'
+    type: password
+    externalSecret: '{{ tpl (default "" .Values.config.sdncDB.dbRootPassExternalSecret) . }}'
+    password: '{{ .Values.config.sdncDB.dbRootPass }}'
+    passwordPolicy: required
+  - uid: cds-kafka-secret
+    externalSecret: '{{ tpl (default "" .Values.config.jaasConfExternalSecret) . }}'
+    type: genericKV
+    envs:
+      - name: password
+        value: '{{ .Values.config.someConfig }}'
+        policy: generate
+  - uid: cps-creds
+    type: basicAuth
+    externalSecret: '{{ tpl (default "" .Values.config.cps.cpsUserExternalSecret) . }}'
+    login: '{{ .Values.config.cps.cpsUsername }}'
+    password: '{{ .Values.config.cps.cpsPassword }}'
+    passwordPolicy: required
+
+#################################################################
+# AAF part
+#################################################################
+certInitializer:
+  nameOverride: cds-blueprints-processor-cert-initializer
+  aafDeployFqi: deployer@people.osaaf.org
+  aafDeployPass: demo123456!
+  # aafDeployCredsExternalSecret: some secret
+  fqdn: sdnc-cds
+  fqi: sdnc-cds@sdnc-cds.onap.org
+  public_fqdn: sdnc-cds.onap.org
+  cadi_longitude: "0.0"
+  cadi_latitude: "0.0"
+  app_ns: org.osaaf.aaf
+  credsPath: /opt/app/osaaf/local
+  fqi_namespace: org.onap.sdnc-cds
+  #enable below if we need custom CA to be added to blueprint processor pod
+  #importCustomCertsEnabled: true
+  #truststoreMountpath: /opt/onap/cds
+  #truststoreOutputFileName: truststoreONAPall.jks
+  aaf_add_config: >
+    /opt/app/aaf_config/bin/agent.sh;
+    /opt/app/aaf_config/bin/agent.sh local showpass
+    {{.Values.fqi}} {{ .Values.fqdn }} > {{ .Values.credsPath }}/mycreds.prop
+
+#################################################################
+# Application configuration defaults.
+#################################################################
+# application image
+image: onap/ccsdk-blueprintsprocessor:1.3.0
+pullPolicy: Always
+
+# flag to enable debugging - application support required
+debugEnabled: false
+
+# application configuration
+config:
+  appConfigDir: /opt/app/onap/config
+  sdncDB:
+    dbService: mariadb-galera
+    dbPort: 3306
+    dbName: sdnctl
+    # dbRootPass: Custom root password
+    dbRootPassExternalSecret: '{{ include "common.mariadb.secret.rootPassSecretName" ( dict "dot" . "chartName" .Values.config.sdncDB.dbService ) }}'
+  cdsDB:
+    dbServer: cds-db
+    dbPort: 3306
+    dbName: sdnctl
+    dbUser: sdnctl
+    dbPassword: sdnctl
+    # dbCredsExternalSecret: <some secret name>
+    # dbRootPassword: password
+    # dbRootPassExternalSecret
+  someConfig: blah
+  cps:
+    cpsUsername: ''
+    cpsPassword: ''
+    cpsUserExternalSecret: '{{ include "common.release" . }}-cps-core-app-user-creds'
+
+# default number of instances
+replicaCount: 1
+
+nodeSelector: {}
+
+affinity: {}
+
+# If useStrimziKafka is true, the following also applies:
+# strimzi will create an associated kafka user and the topics defined for Request and Audit elements below.
+# The connection type must be kafka-scram-plain-text-auth
+# The bootstrapServers will target the strimzi kafka cluster by default
+useStrimziKafka: false
+cdsKafkaUser: cds-kafka-user
+
+kafkaRequestConsumer:
+  enabled: false
+  type: kafka-scram-plain-text-auth
+  bootstrapServers: host:port
+  groupId: cds-consumer
+  topic: cds.blueprint-processor.self-service-api.request
+  clientId: request-receiver-client-id
+  pollMillSec: 1000
+kafkaRequestProducer:
+  type: kafka-scram-plain-text-auth
+  bootstrapServers: host:port
+  clientId: request-producer-client-id
+  topic: cds.blueprint-processor.self-service-api.response
+  enableIdempotence: false
+kafkaAuditRequest:
+  enabled: false
+  type: kafka-scram-plain-text-auth
+  bootstrapServers: host:port
+  clientId: audit-request-producer-client-id
+  topic: cds.blueprint-processor.self-service-api.audit.request
+  enableIdempotence: false
+kafkaAuditResponse:
+  type: kafka-scram-plain-text-auth
+  bootstrapServers: host:port
+  clientId: audit-response-producer-client-id
+  topic: cds.blueprint-processor.self-service-api.audit.response
+  enableIdempotence: false
+
+# probe configuration parameters
+startup:
+  initialDelaySeconds: 10
+  failureThreshold: 30
+  periodSeconds: 10
+
+liveness:
+  initialDelaySeconds: 1
+  periodSeconds: 20
+  timeoutSeconds: 30
+  # necessary to disable liveness probe when setting breakpoints
+  # in debugger so K8s doesn't restart unresponsive container
+  enabled: false
+
+readiness:
+  initialDelaySeconds: 120
+  periodSeconds: 10
+  timeoutSeconds: 20
+
+service:
+  http:
+    type: ClusterIP
+    portName: http
+    internalPort: 8080
+    externalPort: 8080
+  grpc:
+    type: ClusterIP
+    portName: grpc
+    internalPort: 9111
+    externalPort: 9111
+  cluster:
+    type: ClusterIP
+    portName: tcp-cluster
+    internalPort: 5701
+    externalPort: 5701
+
+persistence:
+  volumeReclaimPolicy: Retain
+  accessMode: ReadWriteMany
+  size: 2Gi
+  enabled: true
+  mountSubPath: cds/blueprints/deploy
+  deployedBlueprint: /opt/app/onap/blueprints/deploy
+
+cluster:
+  # Cannot have cluster enabled if the replicaCount is not at least 3
+  enabled: false
+
+  clusterName: cds-cluster
+
+  # Defines the number of node to be part of the CP subsystem/raft algorithm. This value should be
+  # between 3 and 7 only.
+  groupSize: 3
+
+ingress:
+  enabled: false
+  service:
+    - baseaddr: "blueprintsprocessorhttp"
+      name: "cds-blueprints-processor-http"
+      port: 8080
+      config:
+        ssl: "none"
+
+logback:
+  rootLogLevel: INFO
+  logger:
+    springframework: INFO
+    springframeworkWeb: INFO
+    springframeworkSecurityWebauthentication: INFO
+    hibernate: INFO
+    onapCcsdkCds: INFO
+
+flavor: small
+
+resources:
+  small:
+    limits:
+      cpu: 2
+      memory: 4Gi
+    requests:
+      cpu: 1
+      memory: 1Gi
+  large:
+    limits:
+      cpu: 4
+      memory: 8Gi
+    requests:
+      cpu: 2
+      memory: 4Gi
+  unlimited: {}
+
+#Pods Service Account
+serviceAccount:
+  nameOverride: cds-blueprints-processor
+  roles:
+    - read
+
+# workflow store flag
+workflow:
+  storeEnabled: false

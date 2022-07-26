@@ -1,0 +1,185 @@
+# Copyright © 2017 Amdocs, AT&T, Bell Canada, VMware
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#       http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+#################################################################
+# Global configuration defaults.
+#################################################################
+global:
+  nodePortPrefix: 302
+  persistence: {}
+
+#################################################################
+# Secrets metaconfig
+#################################################################
+secrets:
+  - uid: oof-onap-certs
+    name: &oof-certs '{{ include "common.release" . }}-oof-onap-certs'
+    externalSecret: '{{ tpl (default "" .Values.certSecret) . }}'
+    type: generic
+    filePaths:
+      - resources/config/certs/intermediate_root_ca.pem
+      - resources/config/certs/aaf_root_ca.cer
+
+#################################################################
+# Application configuration defaults.
+#################################################################
+# application image
+image: onap/optf-osdf:3.0.6
+pullPolicy: Always
+
+# flag to enable debugging - application support required
+debugEnabled: false
+
+# application configuration
+config:
+  msbgateway: msb-iag
+  msbPort: 80
+  placementVersioningEnabled: True
+  # Placement API latest version numbers to be set in HTTP header
+  placementMajorVersion: "1"
+  placementMinorVersion: "0"
+  placementPatchVersion: "0"
+  # Placement API default version numbers to be set in HTTP header
+  placementDefaultMajorVersion: "1"
+  placementDefaultMinorVersion: "0"
+  placementDefaultPatchVersion: "0"
+
+  # Url and credentials for Conductor.
+  conductorUrl: https://oof-has-api:8091/v1/plans/
+  conductorPingWaitTime: 10
+  conductorMaxRetries: 30
+  # versions to be set in HTTP header
+  conductorMinorVersion: 0
+  # Url and credentials for the Policy Platform
+  policyPlatformUrl: https://policy-xacml-pdp:6969/policy/pdpx/v1/decision  # Policy Dev platform URL
+  policyPlatformEnv: TEST # Environment for policy platform
+  # Credentials for the message reader - A placeholder.
+  messageReaderHosts: NA
+  messageReaderTopic: NA
+  # Credentials for the SDC interface - A placeholder.
+  sdcUrl: NA
+  sdcONAPInstanceID: NA
+  #AAF Authentication
+  is_aaf_enabled: False
+  aaf_cache_expiry_mins: 5
+  aaf_url: https://aaf-service:8100
+  aaf_user_roles:
+      - '/placement:org.onap.oof.access|*|read ALL'
+      - '/pci:org.onap.oof.access|*|read ALL'
+  # Secret Management Service from AAF
+  aaf_sms_url: https://aaf-sms
+  aaf_sms_port: 10443
+  aaf_sms_timeout: 30
+  secret_domain: osdf
+  aaf_ca_certs: /opt/app/ssl_cert/aaf_root_ca.cer
+  configClientType: cps
+  # config db api
+  configDbUrl: http://configdb:8080
+  configDbGetCellListUrl: 'api/sdnc-config-db/v3/getCellList'
+  configDbGetNbrListUrl: 'api/sdnc-config-db/v3/getNbrList'
+  # cps api
+  cps:
+    url: cps-tbdmt:8080/execute
+    cellListUrl: 'ran-network/getCellList'
+    nbrListUrl: 'ran-network/getNbrList'
+
+  #aai api
+  aaiUrl: https://aai:8443
+  aaiGetLinksUrl: /aai/v16/network/logical-links
+  aaiServiceInstanceUrl : /aai/v20/nodes/service-instances/service-instance/
+  aaiGetControllersUrl: /aai/v19/external-system/esr-thirdparty-sdnc-list
+  controllerQueryUrl: /aai/v19/query?format=resource
+  aaiGetInterDomainLinksUrl: /aai/v19/network/logical-links?link-type=inter-domain&operational-status=up
+  #des api
+  desUrl: https://des.url:9000
+  desApiPath: /datalake/v1/exposure/
+  desUsername: ''
+  desPassword: ''
+# default number of instances
+replicaCount: 1
+nodeSelector: {}
+affinity: {}
+# Resource Limit flavor -By Default using small
+flavor: small
+
+#sub-charts configuration
+certInitializer:
+  nameOverride: oof-osdf-cert-initializer
+  fqdn: "oof.onap"
+  app_ns: "org.osaaf.aaf"
+  fqi: "oof@oof.onap.org"
+  fqi_namespace: org.onap.oof
+  public_fqdn: "oof.onap.org"
+  aafDeployFqi: "deployer@people.osaaf.org"
+  aafDeployPass: demo123456!
+  cadi_latitude: "0.0"
+  cadi_longitude: "0.0"
+  credsPath: /opt/app/osaaf/local
+  appMountPath: /opt/osdf/osaaf
+  aaf_add_config: >
+    chmod 444 {{ .Values.credsPath }}/{{ .Values.fqi_namespace }}.key;
+
+# Segregation for Different environment (Small and Large)
+resources:
+  small:
+    limits:
+      memory: 2Gi
+      cpu: 1000m
+    requests:
+      memory: 1Gi
+      cpu: 500m
+  large:
+    limits:
+      memory: 4Gi
+      cpu: 2000m
+    requests:
+      memory: 2Gi
+      cpu: 1000m
+  unlimited: {}
+# probe configuration parameters
+liveness:
+  initialDelaySeconds: 10
+  periodSeconds: 10
+  # necessary to disable liveness probe when setting breakpoints
+  # in debugger so K8s doesn't restart unresponsive container
+  enabled: true
+readiness:
+  initialDelaySeconds: 10
+  periodSeconds: 10
+service:
+  type: NodePort
+  name: oof-osdf
+  externalPort: 8698
+  internalPort: 8699
+  nodePort: 48
+ingress:
+  enabled: false
+  service:
+    - baseaddr: "oofosdf"
+      name: "oof-osdf"
+      port: 8698
+  config:
+    ssl: "redirect"
+
+#component overrides
+
+oof-has:
+  enabled: true
+  certSecret: *oof-certs
+
+#Pods Service Account
+serviceAccount:
+  nameOverride: oof
+  roles:
+    - read

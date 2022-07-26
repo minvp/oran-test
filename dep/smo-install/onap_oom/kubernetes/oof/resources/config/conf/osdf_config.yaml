@@ -1,0 +1,80 @@
+placementVersioningEnabled: {{ .Values.config.placementVersioningEnabled }}
+
+# Placement API latest version numbers to be set in HTTP header
+placementMajorVersion: {{ .Values.config.placementMajorVersion }}
+placementMinorVersion: {{ .Values.config.placementMinorVersion }}
+placementPatchVersion: {{ .Values.config.placementPatchVersion }}
+
+# Placement API default version numbers to be set in HTTP header
+placementDefaultMajorVersion: {{ .Values.config.placementDefaultMajorVersion }}
+placementDefaultMinorVersion: {{ .Values.config.placementDefaultMinorVersion }}
+placementDefaultPatchVersion: {{ .Values.config.placementDefaultPatchVersion }}
+
+# Credentials for Conductor
+conductorUrl: {{ .Values.config.conductorUrl }}
+conductorPingWaitTime: {{ .Values.config.conductorPingWaitTime }}
+conductorMaxRetries: {{ .Values.config.conductorMaxRetries }}
+# versions to be set in HTTP header
+conductorMinorVersion: {{ .Values.config.conductorMinorVersion }}
+
+# Policy Platform -- requires ClientAuth, Authorization, and Environment
+policyPlatformUrl: {{ .Values.config.policyPlatformUrl }}
+policyPlatformEnv: {{ .Values.config.policyPlatformEnv }}
+
+# Credentials for DMaaP
+messageReaderHosts: {{ .Values.config.messageReaderHosts }}
+messageReaderTopic: {{ .Values.config.messageReaderTopic }}
+
+# Credentials for SDC
+sdcUrl: {{ .Values.config.sdcUrl }}
+sdcONAPInstanceID: {{ .Values.config.sdcONAPInstanceID }}
+
+is_aaf_enabled: {{ .Values.config.is_aaf_enabled }}
+aaf_cache_expiry_mins: {{ .Values.config.aaf_cache_expiry_mins }}
+aaf_url: {{ .Values.config.aaf_url }}
+aaf_user_roles:
+  {{- range .Values.config.aaf_user_roles }}
+  - {{ . }}
+  {{- end }}
+
+# Secret Management Service from AAF
+aaf_sms_url: {{ .Values.config.aaf_sms_url }}.{{ include "common.namespace" . }}:{{ .Values.config.aaf_sms_port }}
+aaf_sms_timeout: {{ .Values.config.aaf_sms_timeout }}
+secret_domain: {{ .Values.config.secret_domain }}
+aaf_ca_certs: {{ .Values.config.aaf_ca_certs }}
+
+configClientType: {{ .Values.config.configClientType }}
+
+# config db api
+configDbUrl: {{ .Values.config.configDbUrl }}
+configDbGetCellListUrl: {{ .Values.config.configDbGetCellListUrl }}
+configDbGetNbrListUrl: {{ .Values.config.configDbGetNbrListUrl }}
+
+# cps api
+cpsUrl: {{ .Values.config.cps.Url }}
+cpsCellListUrl: {{ .Values.config.cps.cellListUrl }}
+cpsNbrListUrl: {{ .Values.config.cps.nbrListUrl }}
+
+# AAI api
+aaiUrl: {{ .Values.config.aaiUrl }}
+aaiGetLinksUrl: {{ .Values.config.aaiGetLinksUrl }}
+aaiServiceInstanceUrl : {{ .Values.config.aaiServiceInstanceUrl }}
+aaiGetControllersUrl: {{ .Values.config.aaiGetControllersUrl }}
+controllerQueryUrl: {{ .Values.config.controllerQueryUrl }}
+aaiGetInterDomainLinksUrl: {{ .Values.config.aaiGetInterDomainLinksUrl }}
+dslQueryPath: /aai/v23/dsl?format=
+
+#DES api
+desUrl: {{ .Values.config.desUrl }}
+desApiPath: {{ .Values.config.desApiPath }}
+desHeaders:
+  Accept: application/json
+  Content-Type: application/json
+desUsername: {{ .Values.config.desUsername }}
+desPassword: {{ .Values.config.desPassword }}
+
+#key
+appkey: ''
+
+activateConsulConfig: False
+

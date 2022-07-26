@@ -1,0 +1,176 @@
+# Copyright © 2017 Amdocs, Bell Canada
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#       http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+#################################################################
+# Global configuration defaults.
+#################################################################
+global:
+  nodePortPrefix: 302
+  loggingDirectory: /opt/app/datartr/logs
+  persistence: {}
+  centralizedLoggingEnabled: true
+  mariadbGalera: &mariadbGalera
+    #This flag allows DMAAP-DR to instantiate its own mariadb-galera cluster
+    localCluster: false
+    service: mariadb-galera
+    internalPort: 3306
+    nameOverride: mariadb-galera
+
+#################################################################
+# Secrets metaconfig
+#################################################################
+secrets:
+  - name: &dbUserSecretName '{{ include "common.release" . }}-dmaap-dr-db-user-credentials'
+    uid: 'dmaap-dr-db-user-credentials'
+    type: basicAuth
+    externalSecret: '{{ ternary "" (tpl (default "" (index .Values "mariadb-galera" "db" "externalSecret")) .) (hasSuffix "dmaap-dr-db-user-credentials" (index .Values "mariadb-galera" "db" "externalSecret"))}}'
+    login: '{{ index .Values "mariadb-galera" "db" "user" }}'
+    password: '{{ index .Values "mariadb-galera" "db" "password" }}'
+
+#################################################################
+# Application configuration defaults.
+#################################################################
+# application image
+image: onap/dmaap/datarouter-prov:2.1.10
+pullPolicy: Always
+
+# flag to enable debugging - application support required
+debugEnabled: false
+
+# application configuration - see parent values chart
+
+# default number of instances
+replicaCount: 1
+
+nodeSelector: {}
+
+affinity: {}
+
+# probe configuration parameters
+liveness:
+  initialDelaySeconds: 30
+  periodSeconds: 10
+  # necessary to disable liveness probe when setting breakpoints
+  # in debugger so K8s doesn't restart unresponsive container
+  enabled: true
+
+readiness:
+  initialDelaySeconds: 30
+  periodSeconds: 10
+
+## Persist data to a persitent volume
+persistence:
+  enabled: true
+  volumeReclaimPolicy: Retain
+  accessMode: ReadWriteOnce
+  mountPath: /dockerdata-nfs
+
+ingress:
+  enabled: false
+  service:
+    - baseaddr: "dmaapdrprov"
+      name: "dmaap-dr-prov"
+      port: 8443
+  config:
+    ssl: "redirect"
+
+config:
+  # dr provisioning server configuration
+  dmaapDrProv:
+    servicetype: NodePort
+    internalPort: 8080
+    internalPort2: 8443
+    portName: dr-prov-port
+    portName2: dr-prov-port2
+    nodePort: 59
+    nodePort2: 69
+    # dr uses the EELF Logging framework https://github.com/att/EELF
+    # and supports the following log levels: TRACE, DEBUG, INFO, WARN, ERROR, OFF
+    logLevel: "INFO"
+
+# mariadb-galera configuration
+mariadb-galera:
+  nameOverride: &dbServer dmaap-dr-db
+  replicaCount: 1
+  db:
+    name: &mysqlDbName datarouter
+    user: datarouter
+    # password:
+    externalSecret: *dbUserSecretName
+  service:
+    name: *dbServer
+  nfsprovisionerPrefix: dmaap-dr-db
+  persistence:
+    size: 1Gi
+    mountSubPath: data-router/dr-db-data
+  serviceAccount:
+    nameOverride: *dbServer
+
+mariadb-init:
+  config:
+    userCredentialsExternalSecret: *dbUserSecretName
+    mysqlDatabase: *mysqlDbName
+  nameOverride: dmaap-dr-mariadb-init
+
+#################################################################
+# AAF part
+#################################################################
+certInitializer:
+  nameOverride: dmaap-dr-prov-cert-initializer
+  aafDeployFqi: deployer@people.osaaf.org
+  aafDeployPass: demo123456!
+# aafDeployCredsExternalSecret: some secret
+  fqdn: dmaap-dr-prov
+  fqi: dmaap-dr-prov@dmaap-dr.onap.org
+  publicFqdn: dmaap-dr.onap.org
+  cadiLatitude: 0.0
+  cadiLongitude: 0.0
+  app_ns: org.osaaf.aaf
+  credsPath: /opt/app/osaaf/local
+
+
+# Resource Limit flavor -By Default using small
+flavor: small
+
+securityContext:
+  user_id: 1000
+  group_id: 1000
+
+# Segregation for Different environment (Small and Large)
+resources:
+  small:
+    limits:
+      cpu: 2000m
+      memory: 4Gi
+    requests:
+      cpu: 500m
+      memory: 1Gi
+  large:
+    limits:
+      cpu: 4000m
+      memory: 8Gi
+    requests:
+      cpu: 1000m
+      memory: 2Gi
+  unlimited: {}
+
+#Pods Service Account
+serviceAccount:
+  nameOverride: dmaap-dr-prov
+  roles:
+    - read
+
+#Log configuration
+log:
+  path: /var/log/onap

@@ -1,0 +1,8 @@
+{
+    "cloudify": {
+        "protocol": "https"
+    },
+    "inventory": {
+        "protocol": "https"
+    }
+}

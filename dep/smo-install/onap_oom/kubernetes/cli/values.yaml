@@ -1,0 +1,134 @@
+# Copyright © 2017 Amdocs, Bell Canada
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#       http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+#################################################################
+# Global configuration defaults.
+#################################################################
+global:
+  nodePortPrefix: 302
+
+#################################################################
+# Certificate configuration
+#################################################################
+certInitializer:
+  nameOverride: cli-cert-initializer
+  aafDeployFqi: deployer@people.osaaf.org
+  aafDeployPass: demo123456!
+  # aafDeployCredsExternalSecret: some secret
+  fqdn: "cli"
+  app_ns: "org.osaaf.aaf"
+  fqi_namespace: "org.onap.cli"
+  fqi: "cli@cli.onap.org"
+  public_fqdn: "aaf.osaaf.org"
+  cadi_longitude: "0.0"
+  cadi_latitude: "0.0"
+  credsPath: /opt/app/osaaf/local
+  aaf_add_config: |
+    echo "*** transform AAF certs into pem files"
+    mkdir -p {{ .Values.credsPath }}/certs
+    keytool -exportcert -rfc -file {{ .Values.credsPath }}/certs/cacert.pem \
+      -keystore {{ .Values.credsPath }}/{{ .Values.fqi_namespace }}.trust.jks \
+      -alias ca_local_0 \
+      -storepass $cadi_truststore_password
+    openssl pkcs12 -in {{ .Values.credsPath }}/{{ .Values.fqi_namespace }}.p12 \
+      -nokeys -out {{ .Values.credsPath }}/certs/cert.pem \
+      -passin pass:$cadi_keystore_password_p12 \
+      -passout pass:$cadi_keystore_password_p12
+    echo "*** generating needed file"
+    cat {{ .Values.credsPath }}/{{ .Values.fqi_namespace }}.key \
+        {{ .Values.credsPath }}/certs/cert.pem \
+        {{ .Values.credsPath }}/certs/cacert.pem \
+        > {{ .Values.credsPath }}/certs/fullchain.pem;
+    cat {{ .Values.credsPath }}/certs/fullchain.pem
+    echo "*** change ownership of certificates to targeted user"
+    chown -R 33 {{ .Values.credsPath }}
+
+
+#################################################################
+# Application configuration defaults.
+#################################################################
+# application image
+image: onap/cli:6.0.1
+pullPolicy: Always
+flavor: small
+
+# application configuration
+config:
+  climode: daemon
+
+# default number of instances
+replicaCount: 1
+
+nodeSelector: {}
+
+affinity: {}
+
+# probe configuration parameters
+liveness:
+  initialDelaySeconds: 10
+  periodSeconds: 10
+  # necessary to disable liveness probe when setting breakpoints
+  # in debugger so K8s doesn't restart unresponsive container
+  enabled: true
+
+readiness:
+  initialDelaySeconds: 10
+  periodSeconds: 10
+
+service:
+  type: NodePort
+  name: cli
+  externalPort: 443
+  externalPort1: 9443
+  internalPort: "443"
+  internalPort1: 9443
+  nodePort: "60"
+  nodePort1: "71"
+
+ingress:
+  enabled: false
+  service:
+    - baseaddr: "cli.api"
+      name: "cli"
+      port: 443
+    - baseaddr: "cli2.api"
+      name: cli
+      port: 9443
+  config:
+    ssl: "redirect"
+
+# Configure resource requests and limits
+# ref: http://kubernetes.io/docs/user-guide/compute-resources/
+resources:
+  small:
+    limits:
+      cpu: 1
+      memory: 2Gi
+    requests:
+      cpu: 10m
+      memory: 500Mi
+  large:
+    limits:
+      cpu: 4
+      memory: 8Gi
+    requests:
+      cpu: 2
+      memory: 4Gi
+  unlimited: {}
+
+#Pods Service Account
+serviceAccount:
+  nameOverride: cli
+  roles:
+    - read

@@ -1,0 +1,266 @@
+# Copyright (C) 2021 Pantheon.tech, Orange, Bell Canada.
+# Modifications Copyright (C) 2022 Bell Canada
+# Modifications Copyright © 2022 Nordix Foundation
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#       http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+#################################################################
+# Secrets.
+#################################################################
+secrets:
+  - uid: pg-root-pass
+    name: &pgRootPassSecretName '{{ include "common.release" . }}-cps-core-pg-root-pass'
+    type: password
+    externalSecret: '{{ ternary "" (tpl (default "" .Values.postgres.config.pgRootPasswordExternalSecret) .) (hasSuffix "cps-core-pg-root-pass" .Values.postgres.config.pgRootPasswordExternalSecret) }}'
+    password: '{{ .Values.postgres.config.pgRootpassword }}'
+    policy: generate
+  - uid: pg-user-creds
+    name: &pgUserCredsSecretName '{{ include "common.release" . }}-cps-core-pg-user-creds'
+    type: basicAuth
+    externalSecret: '{{ ternary "" (tpl (default "" .Values.postgres.config.pgUserExternalSecret) .) (hasSuffix "cps-core-pg-user-creds" .Values.postgres.config.pgUserExternalSecret) }}'
+    login: '{{ .Values.postgres.config.pgUserName }}'
+    password: '{{ .Values.postgres.config.pgUserPassword }}'
+    passwordPolicy: generate
+  - uid: app-user-creds
+    type: basicAuth
+    externalSecret: '{{ tpl (default "" .Values.config.appUserExternalSecret) . }}'
+    login: '{{ .Values.config.appUserName }}'
+    password: '{{ .Values.config.appUserPassword }}'
+    passwordPolicy: generate
+  - uid: dmi-plugin-user-creds
+    type: basicAuth
+    externalSecret: '{{ tpl (default "" .Values.config.dmiPluginUserExternalSecret) . }}'
+    login: '{{ .Values.config.dmiPluginUserName }}'
+    password: '{{ .Values.config.dmiPluginUserPassword }}'
+    passwordPolicy: generate
+  - uid: cps-kafka-user
+    externalSecret: '{{ tpl (default "" .Values.config.jaasConfExternalSecret) . }}'
+    type: genericKV
+    envs:
+      - name: sasl.jaas.config
+        value: '{{ .Values.config.someConfig }}'
+        policy: generate
+
+#################################################################
+# Global configuration defaults.
+#################################################################
+
+# bitnami image doesn't support well single quote in password
+passwordStrengthOverride: basic
+global:
+  ingress:
+    virtualhost:
+      baseurl: "simpledemo.onap.org"
+  #Service Names of the postgres db to connect to.
+  #Override it to cps-postgres if localCluster is enabled.
+  postgres:
+    localCluster: false
+    service:
+      name: pgset
+      externalPort: 5432
+      name2: tcp-pgset-primary
+      externalPort2: 5432
+      name3: tcp-pgset-replica
+      externalPort3: 5432
+    container:
+      name: postgres
+
+image: onap/cps-and-ncmp:3.0.1
+containerPort: &svc_port 8080
+managementPort: &mgt_port 8081
+
+service:
+  type: ClusterIP
+  name: cps-core
+  ports:
+    - name: &port http
+      port: *svc_port
+    - name: http-management
+      port: *mgt_port
+      targetPort: *mgt_port
+
+prometheus:
+  enabled: false
+
+metrics:
+  serviceMonitor:
+    port: http-management
+      ## specify target port if name is not given to the port in the service definition
+      ##
+    # targetPort: 8080
+    path: /manage/prometheus
+    interval: 60s
+    basicAuth:
+      enabled: false
+
+pullPolicy: Always
+# flag to enable debugging - application support required
+debugEnabled: false
+nodeSelector: {}
+affinity: {}
+# Resource Limit flavor -By Default using small
+flavor: small
+# default number of instances
+replicaCount: 1
+# Segregation for Different environment (Small and Large)
+resources:
+  small:
+    limits:
+      cpu: 2
+      memory: 2Gi
+    requests:
+      cpu: 1
+      memory: 1Gi
+  large:
+    limits:
+      cpu: 4
+      memory: 4Gi
+    requests:
+      cpu: 2
+      memory: 2Gi
+  unlimited: {}
+# probe configuration parameters
+liveness:
+  initialDelaySeconds: 20
+  periodSeconds: 20
+  # necessary to disable liveness probe when setting breakpoints
+  # in debugger so K8s doesn't restart unresponsive container
+  enabled: true
+  path: /manage/health
+  port: *mgt_port
+
+readiness:
+  initialDelaySeconds: 15
+  periodSeconds: 15
+  path: /manage/health
+  port: *mgt_port
+
+startup:
+  failureThreshold: 5
+  periodSeconds: 60
+  path: /manage/health
+  port: *mgt_port
+
+ingress:
+  enabled: true
+  service:
+    - baseaddr: "cps-core"
+      path: "/"
+      name: "cps-core"
+      port: *svc_port
+
+serviceAccount:
+  nameOverride: cps-core
+  roles:
+    - read
+
+securityContext:
+  user_id: 100
+  group_id: 655533
+
+#################################################################
+# Application configuration defaults.
+#################################################################
+
+config:
+
+  # Set it for pre loading xnfdata, else set to null
+  liquibaseLabels: xnf-data-preload
+
+  # REST API basic authentication credentials (passsword is generated if not provided)
+  appUserName: cpsuser
+  spring:
+    profile: helm
+  #appUserPassword:
+  dmiPluginUserName: dmiuser
+# Any new property can be added in the env by setting in overrides in the format mentioned below
+# All the added properties must be in "key: value" format instead of yaml.
+#  additional:
+#    spring.config.max-size: 200
+#    spring.config.min-size: 10
+
+# kafka config
+  useStrimziKafka: true
+  kafkaBootstrap: strimzi-kafka-bootstrap
+# If targeting a custom kafka cluster, ie useStrimziKakfa: false
+# uncomment below config and target your kafka bootstrap servers,
+# along with any other security config.
+
+#  eventPublisher:
+#    spring.kafka.bootstrap-servers: <kafka-bootstrap>:9092
+#    spring.kafka.security.protocol: SASL_PLAINTEXT
+#    spring.kafka.properties.sasl.mechanism: PLAIN
+#    spring.kafka.properties.sasl.jaas.config: org.apache.kafka.common.security.plain.PlainLoginModule required username=admin password=admin_secret;
+
+  additional:
+    notification.data-updated.enabled: true
+    notification.data-updated.topic: cps.data-updated-events
+    notification.data-updated.filters.enabled-dataspaces: ""
+    notification.async.enabled: false
+    notification.async.executor.core-pool-size: 2
+    notification.async.executor.max-pool-size: 1
+    notification.async.executor.queue-capacity: 500
+    notification.async.executor.wait-for-tasks-to-complete-on-shutdown: true
+    notification.async.executor.thread-name-prefix: Async-
+
+logging:
+  level: INFO
+  path: /tmp
+
+#################################################################
+# Postgres overriding defaults in the postgres
+#################################################################
+postgres:
+  postgresInit: true
+  nameOverride: &postgresName cps-core-postgres
+  service:
+    name: *postgresName
+    externalPort: 5432
+    name2: cps-core-pg-primary
+    externalPort2: 5432
+    name3: cps-core-pg-replica
+    externalPort3: 5432
+  container:
+    name:
+      primary: cps-core-pg-primary
+      replica: cps-core-pg-replica
+  persistence:
+    mountSubPath: cps-core/data
+    mountInitPath: cps-core
+  config:
+    pgUserName: cps
+    pgDatabase: cpsdb
+    pgUserExternalSecret: *pgUserCredsSecretName
+    pgRootPasswordExternalSecret: *pgRootPassSecretName
+
+postgres-init:
+  nameOverride: cps-postgres-init
+  config:
+    pgUserName: cps
+    pgDatabase: cpsdb
+    pgDataPath: data
+    pgUserExternalSecret: *pgUserCredsSecretName
+
+    # pgPrimaryPassword: password
+    # pgUserPassword: password
+    # pgRootPassword: password
+
+readinessCheck:
+  wait_for:
+    - '{{ ternary .Values.postgres.service.name "postgres" .Values.global.postgres.localCluster }}'
+
+minReadySeconds: 10
+updateStrategy:
+  type: RollingUpdate
+  maxUnavailable: 0
+  maxSurge: 1

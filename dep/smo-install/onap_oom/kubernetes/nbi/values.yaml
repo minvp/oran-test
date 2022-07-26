@@ -1,0 +1,189 @@
+# Copyright © 2018 Orange
+# Modifications Copyright © 2018  Amdocs, Bell Canada
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#       http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+#################################################################
+# Global configuration defaults.
+#################################################################
+global:
+  nodePortPrefix: 302
+  mariadbGalera: &mariadbGalera
+    #This flag allows SO to instantiate its own mariadb-galera cluster
+    localCluster: false
+    service: mariadb-galera
+    internalPort: 3306
+    nameOverride: mariadb-galera
+  aafEnabled: true
+
+#################################################################
+# AAF part
+#################################################################
+certInitializer:
+  nameOverride: nbi-cert-initializer
+  aafDeployFqi: deployer@people.osaaf.org
+  aafDeployPass: demo123456!
+  # aafDeployCredsExternalSecret: some secret
+  fqdn: nbi
+  fqi: nbi@nbi.onap.org
+  public_fqdn: nbi.onap.org
+  cadi_longitude: "0.0"
+  cadi_latitude: "0.0"
+  app_ns: org.osaaf.aaf
+  credsPath: /opt/app/osaaf/local
+  aaf_add_config: >
+    echo "cadi_keystore_password_p12=$cadi_keystore_password_p12" > {{ .Values.credsPath }}/mycreds.prop
+    echo "cadi_truststore_password=$cadi_truststore_password" >> {{ .Values.credsPath }}/mycreds.prop
+
+aafConfig:
+  permission_user: 1000
+  permission_group: 999
+
+#################################################################
+# Secrets metaconfig
+#################################################################
+secrets:
+  - uid: nbi-db-secret
+    name: &dbUserSecretName '{{ include "common.release" . }}-nbi-db-secret'
+    type: basicAuth
+    externalSecret: '{{ tpl (default "" .Values.config.db.userCredentialsExternalSecret) . }}'
+    login: '{{ .Values.config.db.userName }}'
+    password: '{{ .Values.config.db.userPassword }}'
+
+subChartsOnly:
+  enabled: true
+
+# application image
+repository: nexus3.onap.org:10001
+image: onap/externalapi/nbi:10.0.0
+pullPolicy: IfNotPresent
+sdc_authorization: Basic YWFpOktwOGJKNFNYc3pNMFdYbGhhazNlSGxjc2UyZ0F3ODR2YW9HR21KdlV5MlU=
+aai_authorization: Basic QUFJOkFBSQ==
+so_authorization:
+
+# application configuration
+config:
+  loglevel: INFO
+  logstashServiceName: log-ls
+  logstashPort: 5044
+  cloudOwner: CloudOwner
+  k8sCloudRegionId: k8sregionfour
+  k8sCloudOwner: k8scloudowner4
+  ecompInstanceId: OOM
+  openStackRegion: RegionOne
+  openStackVNFTenantId: 31047205ce114b60833b23e400d6a535
+  db:
+    userName: rene
+    # userPassword: password
+    # userCredentialsExternalSecret: some-secret
+
+mariadb-galera:
+  db:
+    externalSecret: *dbUserSecretName
+    name: &mysqlDbName nbi
+  service:
+    name: nbi-galera
+    portName: nbi-galera
+    internalPort: 3306
+  nameOverride: &nbi-galera nbi-galera
+  replicaCount: 1
+  persistence:
+    enabled: true
+    mountSubPath: nbi/maria/data
+  serviceAccount:
+    nameOverride: *nbi-galera
+
+mariadb-init:
+  config:
+    userCredentialsExternalSecret: *dbUserSecretName
+    mysqlDatabase: *mysqlDbName
+  nameOverride: nbi-config
+
+mongo:
+  nameOverride: nbi-mongo
+  config:
+    dbName: ServiceOrderDB
+  service:
+    name: nbi-mongohost
+    internalPort: 27017
+  nfsprovisionerPrefix: nbi
+  sdnctlPrefix: nbi
+  persistence:
+    mountSubPath: nbi/mongo/data
+    enabled: true
+  disableNfsProvisioner: true
+
+
+# default number of instances
+replicaCount: 1
+
+nodeSelector: {}
+
+affinity: {}
+
+# probe configuration parameters
+liveness:
+  path: /nbi/api/v4/status
+  port: 8443
+  initialDelaySeconds: 180
+  periodSeconds: 30
+  # necessary to disable liveness probe when setting breakpoints
+  # in debugger so K8s doesn't restart unresponsive container
+  enabled: true
+
+readiness:
+  path: /nbi/api/v4/status
+  port: 8443
+  initialDelaySeconds: 185
+  periodSeconds: 30
+
+service:
+  type: NodePort
+  portName: api
+  name: nbi
+  nodePort: 74
+  internalPort: 8443
+
+ingress:
+  enabled: false
+  service:
+    - baseaddr: "nbi.api"
+      name: "nbi"
+      port: 8443
+  config:
+    ssl: "redirect"
+# Resource Limit flavor -By Default using small
+flavor: small
+# Segregation for Different environment (Small and Large)
+resources:
+  small:
+    limits:
+      cpu: 1
+      memory: 2Gi
+    requests:
+      cpu: 100m
+      memory: 1Gi
+  large:
+    limits:
+      cpu: 2
+      memory: 4Gi
+    requests:
+      cpu: 200m
+      memory: 2Gi
+  unlimited: {}
+
+#Pods Service Account
+serviceAccount:
+  nameOverride: nbi
+  roles:
+    - read

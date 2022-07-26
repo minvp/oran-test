@@ -1,0 +1,178 @@
+# Copyright © 2017 Amdocs, Bell Canada
+# Modifications Copyright © 2018 AT&T, ZTE
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#       http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+#################################################################
+# Global configuration defaults.
+#################################################################
+global:
+  nodePortPrefix: 302
+  aafEnabled: true
+  sdc_cassandra:
+    #This flag allows SDC to instantiate its own cluster, serviceName
+    #should be sdc-cs if this flag is enabled
+    localCluster: false
+    #The cassandra service name to connect to (default: shared cassandra service)
+    serviceName: cassandra
+    #Shared cassandra cluster replicaCount, should be changed if localCluster is enabled
+    #to match with its own cluster replica
+    replicaCount: 3
+    clusterName: cassandra
+    dataCenter: Pod
+
+#################################################################
+# Application configuration defaults.
+#################################################################
+# application image
+image: onap/sdc-backend-all-plugins:1.11.4
+backendInitImage: onap/sdc-backend-init:1.11.4
+
+pullPolicy: Always
+
+# flag to enable debugging - application support required
+debugEnabled: false
+
+#environment file
+env:
+  name: AUTO
+
+certInitializer:
+  nameOverride: sdc-be-cert-init
+  aafDeployFqi: deployer@people.osaaf.org
+  aafDeployPass: demo123456!
+  fqdn: sdc
+  fqi: sdc@sdc.onap.org
+  public_fqdn: sdc.onap.org
+  cadi_longitude: "0.0"
+  cadi_latitude: "0.0"
+  app_ns: org.osaaf.aaf
+  credsPath: /opt/app/osaaf/local
+  addconfig: true
+  keystoreFile: "org.onap.sdc.p12"
+  truststoreFile: "org.onap.sdc.trust.jks"
+  permission_user: 352070
+  permission_group: 35953
+  aaf_add_config: |
+    echo "cadi_keystore_password_p12=$cadi_keystore_password_p12" > {{ .Values.credsPath }}/mycreds.prop
+    echo "cadi_truststore_password=$cadi_truststore_password" >> {{ .Values.credsPath }}/mycreds.prop
+
+#################################################################
+# SDC Config part
+#################################################################
+config:
+  javaOptions: "-Xmx1536m -Xms1536m"
+  cassandraSslEnabled: "false"
+
+# default number of instances
+replicaCount: 1
+
+nodeSelector: {}
+
+affinity: {}
+
+# probe configuration parameters
+liveness:
+  initialDelaySeconds: 1
+  periodSeconds: 10
+  timeoutSeconds: 180
+  successThreshold: 1
+  failureThreshold: 3
+  # necessary to disable liveness probe when setting breakpoints
+  # in debugger so K8s doesn't restart unresponsive container
+  enabled: true
+
+readiness:
+  initialDelaySeconds: 1
+  periodSeconds: 10
+  timeoutSeconds: 180
+  successThreshold: 1
+  failureThreshold: 3
+
+startup:
+  initialDelaySeconds: 10
+  periodSeconds: 10
+  timeoutSeconds: 180
+  successThreshold: 1
+  failureThreshold: 60
+
+service:
+  type: NodePort
+  name: sdc-be
+  both_tls_and_plain: true
+  internalPort: 8080
+  msb:
+    - port: 8443
+      url: "/sdc/v1"
+      version: "v1"
+      protocol: "REST"
+      visualRange: "1"
+      serviceName: sdc
+      enable_ssl: true
+    - port: 8080
+      url: "/sdc/v1"
+      version: "v1"
+      protocol: "REST"
+      visualRange: "1"
+      serviceName: sdc-deprecated
+  ports:
+    - name: tcp-api
+      port: 8443
+      plain_port: 8080
+      port_protocol: http
+      nodePort: '04'
+
+ingress:
+  enabled: false
+  service:
+    - baseaddr: "sdc.api.be"
+      name: "sdc-be"
+      port: 8443
+  config:
+    ssl: "redirect"
+
+
+# Resource Limit flavor -By Default using small
+flavor: small
+# Segregation for Different environment (Small and Large)
+resources:
+  small:
+    limits:
+      cpu: 1
+      memory: 2Gi
+    requests:
+      cpu: 100m
+      memory: 1Gi
+  large:
+    limits:
+      cpu: 2
+      memory: 4Gi
+    requests:
+      cpu: 200m
+      memory: 2Gi
+  unlimited: {}
+
+#Pods Service Account
+serviceAccount:
+  nameOverride: sdc-be
+  roles:
+    - read
+
+wait_for_job_container:
+  containers:
+    - '{{ include "common.name" . }}-job'
+
+#Log configuration
+log:
+  path: /var/log/onap
+logConfigMapNamePrefix: '{{ include "common.fullname" . }}'
