@@ -45,7 +45,7 @@ if [ -z "$WORKSPACE" ]; then
     export WORKSPACE=`git rev-parse --show-toplevel`
 fi
 
-HEAT_DIR="$WORKSPACE/dep/tools/k8s/heat"
+HEAT_DIR="$WORKSPACE/tools/k8s/heat"
 BIN_DIR="$WORKSPACE/tools/k8s/bin"
 ETC_DIR="$WORKSPACE/tools/k8s/etc"
 ENV_DIR="$WORKSPACE/tools/k8s/heat/env"
